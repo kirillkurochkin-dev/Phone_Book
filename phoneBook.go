@@ -1,24 +1,118 @@
 package main
 
 import (
+	"encoding/csv"
 	"fmt"
-	"math/rand"
 	"os"
-	"path"
-	"strconv"
+	"regexp"
+	"strings"
 )
 
-type person struct {
-	name    string
-	surname string
-	phone   string
+type Person struct {
+	Name       string
+	Surname    string
+	Phone      string
+	LastAccess string
 }
 
-var phoneBook []person
+var phoneBook []Person
+var index map[string]int
 
-func search(phone string) *person {
+const CSVFILE string = ""
+
+func readCSVFile(filepath string) error {
+	_, err := os.Stat(filepath)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(filepath)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	lines, err := csv.NewReader(f).ReadAll()
+	if err != nil {
+		return err
+	}
+
+	for _, line := range lines {
+		temp := Person{
+			Name:       line[0],
+			Surname:    line[1],
+			Phone:      line[2],
+			LastAccess: line[3],
+		}
+		phoneBook = append(phoneBook, temp)
+	}
+	return nil
+}
+
+func saveCSVFile(filepath string) error {
+	csvfile, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer csvfile.Close()
+
+	csvwriter := csv.NewWriter(csvfile)
+	for _, row := range phoneBook {
+		temp := []string{row.Name, row.Surname, row.Phone, row.LastAccess}
+		err := csvwriter.Write(temp)
+		if err != nil {
+			return err
+		}
+	}
+	csvwriter.Flush()
+	return nil
+}
+
+func createIndex() error {
+	index = make(map[string]int)
+	for i, k := range phoneBook {
+		key := k.Phone
+		index[key] = i
+	}
+	return nil
+}
+
+func insert(person *Person) error {
+	_, ok := index[(*person).Phone]
+	if ok {
+		return fmt.Errorf("%s already exists", person)
+	}
+	phoneBook = append(phoneBook, *person)
+
+	_ = createIndex()
+
+	err := saveCSVFile(CSVFILE)
+
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func deleteEntry(key string) error {
+	i, ok := index[key]
+	if !ok {
+		return fmt.Errorf("%s cannot be found!", key)
+	}
+	phoneBook = append(phoneBook[:i], phoneBook[i+1:]...)
+	delete(index, key)
+
+	err := saveCSVFile(CSVFILE)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func search(phone string) *Person {
 	for _, pers := range phoneBook {
-		if pers.phone == phone {
+		if pers.Phone == phone {
 			return &pers
 		}
 	}
@@ -31,65 +125,94 @@ func list() {
 	}
 }
 
-func getString(len int) string {
-	temp := ""
-	startChar := "!"
-
-	for i := 0; i < len; i++ {
-		myRand := rand.Intn(26) + 65
-		newChar := string(startChar[0] + byte(myRand))
-		temp = temp + newChar
-	}
-
-	return temp
-}
-
-func populate(n int) {
-	for i := 0; i < n; i++ {
-		phoneBook = append(phoneBook, person{
-			name:    getString(rand.Intn(10)),
-			surname: getString(rand.Intn(10)),
-			phone:   strconv.Itoa(rand.Intn(899999999) + 100000000),
-		})
-	}
+func matchTel(s string) bool {
+	t := []byte(s)
+	re := regexp.MustCompile(`\d+$`)
+	return re.Match(t)
 }
 
 func main() {
 	args := os.Args
 	if len(args) == 1 {
-		exe := path.Base(args[0])
-		fmt.Printf("Usage: %s search|list <arguments>\n", exe)
+		fmt.Println("Usage: insert|delete|search|list <arguments>")
+		return
 	}
 
-	populate(10)
+	_, err := os.Stat(CSVFILE)
+	if err != nil {
+		fmt.Println("Creating", CSVFILE)
+		f, err := os.Create(CSVFILE)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		f.Close()
+	}
 
-	/*phoneBook = append(phoneBook, person{
-		name:    "Alex",
-		surname: "Fern",
-		phone:   "324809723",
-	})
-	phoneBook = append(phoneBook, person{
-		name:    "Jean",
-		surname: "Morningstar",
-		phone:   "234809384",
-	})*/
+	fileInfo, err := os.Stat(CSVFILE)
+	mode := fileInfo.Mode()
+	if !mode.IsRegular() {
+		fmt.Println(CSVFILE, "not a regular file!")
+		return
+	}
+
+	err = readCSVFile(CSVFILE)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+
+	err = createIndex()
+	if err != nil {
+		fmt.Println("Cannot create index.")
+		return
+	}
 
 	switch args[1] {
+	case "insert":
+		if len(args) != 5 {
+			fmt.Println("Usage: insert Name Surname Telephone")
+			return
+		}
+		t := strings.ReplaceAll(args[4], "-", "")
+		if !matchTel(t) {
+			fmt.Println("Not a valid telephone number:", t)
+			return
+		}
+	case "delete":
+		if len(args) != 3 {
+			fmt.Println("Usage: delete Number")
+			return
+		}
+		t := strings.ReplaceAll(args[2], "-", "")
+		if !matchTel(t) {
+			fmt.Println("Not a valid telephone number:", t)
+			return
+		}
+		err := deleteEntry(t)
+		if err != nil {
+			fmt.Println(err)
+		}
 	case "search":
 		if len(args) != 3 {
-			fmt.Printf("Usage: search Phone")
+			fmt.Println("Usage: search Number")
 			return
 		}
-		pers := search(args[2])
-		if pers == nil {
-			fmt.Println("Person is not found: ", args[2])
+		t := strings.ReplaceAll(args[2], "-", "")
+		if !matchTel(t) {
+			fmt.Println("Not a valid telephone number:", t)
 			return
 		}
-		fmt.Println(*pers)
+		temp := search(t)
+		if temp == nil {
+			fmt.Println("Number not found:", t)
+			return
+		}
+		fmt.Println(*temp)
 	case "list":
 		list()
 	default:
-		fmt.Println("Option is not valid")
+		fmt.Println("Not a valid option")
 	}
 
 }
