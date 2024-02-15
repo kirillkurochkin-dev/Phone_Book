@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -15,7 +16,24 @@ type Person struct {
 	LastAccess string
 }
 
-var phoneBook []Person
+type PhoneBook []Person
+
+func (p PhoneBook) Len() int {
+	return len(p)
+}
+
+func (p PhoneBook) Less(i, j int) bool {
+	if p[i].Surname == p[j].Surname {
+		return p[i].Name < p[j].Name
+	}
+	return p[i].Surname < p[j].Surname
+}
+
+func (p PhoneBook) Swap(i, j int) {
+	p[i], p[j] = p[j], p[i]
+}
+
+var phoneBook PhoneBook
 var index map[string]int
 
 const CSVFILE string = ""
@@ -120,6 +138,7 @@ func search(phone string) *Person {
 }
 
 func list() {
+	sort.Sort(phoneBook)
 	for _, p := range phoneBook {
 		fmt.Println(p)
 	}
@@ -131,22 +150,24 @@ func matchTel(s string) bool {
 	return re.Match(t)
 }
 
-func main() {
-	args := os.Args
-	if len(args) == 1 {
-		fmt.Println("Usage: insert|delete|search|list <arguments>")
-		return
-	}
-
+func setCSVFILE() error {
 	_, err := os.Stat(CSVFILE)
 	if err != nil {
 		fmt.Println("Creating", CSVFILE)
 		f, err := os.Create(CSVFILE)
 		if err != nil {
-			fmt.Println(err)
-			return
+			return err
 		}
 		f.Close()
+	}
+	return nil
+}
+
+func main() {
+	args := os.Args
+	if len(args) == 1 {
+		fmt.Println("Usage: insert|delete|search|list <arguments>")
+		return
 	}
 
 	fileInfo, err := os.Stat(CSVFILE)
